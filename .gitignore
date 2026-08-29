@@ -1,0 +1,32 @@
+# ── Python ──────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+dist/
+build/
+
+# ── 环境变量（严禁泄露真实 Key）────────
+.env
+.env.local
+.env.*.local
+
+# ── 临时文件 ────────────────────────────
+*.log
+pdf_content.txt
+
+# ── 课程指导书源文件（本地保留，不入库）─
+*工程实践指导书*.pdf
+
+# ── 系统 / 编辑器 ──────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
