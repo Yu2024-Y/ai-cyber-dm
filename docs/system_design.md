@@ -69,9 +69,9 @@ graph TD
     Player --> UC7
     Op --> UC8
 
-    UC2 ..> LLMAPI : <<extend>> 调用外部大模型
-    UC5 ..> IMGAPI : <<extend>> 调用外部生图模型
-    UC6 ..> TTS : <<extend>> 调用语音合成
+    UC2 -.->|extend 调用外部大模型| LLMAPI
+    UC5 -.->|extend 调用外部生图模型| IMGAPI
+    UC6 -.->|extend 调用语音合成| TTS
 ```
 
 **Actor 说明**：玩家（主参与者）、运维人员（次要参与者）、外部大模型 API（外部系统）。
