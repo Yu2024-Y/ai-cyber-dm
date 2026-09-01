@@ -1,0 +1,6 @@
+# 开发 / 测试 / CI 依赖
+-r requirements.txt
+pytest>=8.2
+pytest-asyncio>=0.23
+ruff>=0.5
+behave>=1.2.6
