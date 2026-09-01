@@ -1,4 +1,4 @@
-"""FastAPI 应用入口（Sprint 1 骨架）。
+"""FastAPI 应用入口（Sprint 1）。
 
 分层约定：
   src/api       路由层
@@ -9,8 +9,12 @@
 from fastapi import FastAPI
 
 from src.config import get_settings
+from src.infra.database import init_db
 
 settings = get_settings()
+
+# 首次启动自动建表（S1-5）
+init_db()
 
 app = FastAPI(
     title=settings.app_name,
