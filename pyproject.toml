@@ -16,3 +16,6 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["src"]
