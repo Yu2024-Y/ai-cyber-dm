@@ -6,7 +6,11 @@
   src/domain    Pydantic 数据契约
   src/infra     数据持久化与外部 API 适配
 """
+from pathlib import Path
+
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from src.api.routes import router as api_router
 from src.config import get_settings
@@ -24,6 +28,16 @@ app = FastAPI(
 )
 
 app.include_router(api_router)
+
+# 前端静态资源（S2-7）
+_STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
+
+
+@app.get("/")
+def index() -> FileResponse:
+    """前端 MVP 页面。"""
+    return FileResponse(_STATIC_DIR / "index.html")
 
 
 @app.get("/health")

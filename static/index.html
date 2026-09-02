@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI 赛博 DM</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Microsoft YaHei", sans-serif;
+      background: #0d1117; color: #c9d1d9;
+      display: flex; flex-direction: column; height: 100vh;
+    }
+    header {
+      background: #161b22; padding: 16px 24px;
+      border-bottom: 1px solid #30363d;
+      display: flex; align-items: center; gap: 12px;
+    }
+    header h1 { font-size: 20px; color: #58a6ff; }
+    header span { font-size: 13px; color: #8b949e; }
+    #chat {
+      flex: 1; overflow-y: auto; padding: 24px;
+      display: flex; flex-direction: column; gap: 12px;
+    }
+    .msg { max-width: 75%; padding: 10px 14px; border-radius: 8px; line-height: 1.6; }
+    .msg.user { align-self: flex-end; background: #1f6feb; color: #fff; }
+    .msg.dm { align-self: flex-start; background: #21262d; border: 1px solid #30363d; }
+    .msg.error { align-self: flex-start; background: #581414; color: #f85149; }
+    footer {
+      display: flex; gap: 12px; padding: 16px 24px;
+      background: #161b22; border-top: 1px solid #30363d;
+    }
+    #input {
+      flex: 1; padding: 10px 14px; border-radius: 6px;
+      border: 1px solid #30363d; background: #0d1117; color: #c9d1d9;
+    }
+    #send {
+      padding: 10px 24px; border: none; border-radius: 6px;
+      background: #238636; color: #fff; cursor: pointer; font-size: 14px;
+    }
+    #send:hover { background: #2ea043; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>AI 赛博 DM</h1>
+    <span>输入你的行动，DM 推进剧情</span>
+  </header>
+  <div id="chat">
+    <div class="msg dm">欢迎来到赛博世界，冒险者。你站在霓虹闪烁的街道上，下一步去哪里？</div>
+  </div>
+  <footer>
+    <input id="input" placeholder="例如：我走进那家酒馆..." autocomplete="off">
+    <button id="send">发送</button>
+  </footer>
+  <script src="/static/app.js"></script>
+</body>
+</html>
