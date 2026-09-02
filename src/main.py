@@ -1,4 +1,4 @@
-"""FastAPI 应用入口（Sprint 1）。
+"""FastAPI 应用入口。
 
 分层约定：
   src/api       路由层
@@ -8,12 +8,13 @@
 """
 from fastapi import FastAPI
 
+from src.api.routes import router as api_router
 from src.config import get_settings
 from src.infra.database import init_db
 
 settings = get_settings()
 
-# 首次启动自动建表（S1-5）
+# 首次启动自动建表
 init_db()
 
 app = FastAPI(
@@ -21,6 +22,8 @@ app = FastAPI(
     version=settings.app_version,
     description="AI 赛博 DM 与无限跑团引擎：LLM 主持 + 骰子检定 + 场景图 + 语音播报",
 )
+
+app.include_router(api_router)
 
 
 @app.get("/health")

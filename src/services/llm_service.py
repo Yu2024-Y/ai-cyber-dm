@@ -25,11 +25,7 @@ def _get_client() -> OpenAI:
 
 
 def chat(messages: list[dict], *, max_tokens: int = 1000) -> str:
-    """非流式调用大模型，返回完整回复文本。
-
-    参数 messages 为 OpenAI 格式的消息列表，如
-    [{"role": "system", "content": "..."}, {"role": "user", "content": "..."}]
-    """
+    """非流式调用大模型，返回完整回复文本。"""
     if not settings.siliconflow_api_key:
         raise RuntimeError("未配置 SILICONFLOW_API_KEY（请在 .env 中设置）")
 
@@ -39,3 +35,25 @@ def chat(messages: list[dict], *, max_tokens: int = 1000) -> str:
         max_tokens=max_tokens,
     )
     return resp.choices[0].message.content or ""
+
+
+def chat_stream(messages: list[dict], *, max_tokens: int = 1000):
+    """流式调用大模型，逐段 yield 回复文本（SSE 用）。
+
+    用法：
+        for chunk in chat_stream(messages):
+            yield chunk   # 每段文本
+    """
+    if not settings.siliconflow_api_key:
+        raise RuntimeError("未配置 SILICONFLOW_API_KEY（请在 .env 中设置）")
+
+    resp = _get_client().chat.completions.create(
+        model=settings.llm_model,
+        messages=messages,
+        max_tokens=max_tokens,
+        stream=True,
+    )
+    for chunk in resp:
+        delta = chunk.choices[0].delta.content if chunk.choices else None
+        if delta:
+            yield delta
