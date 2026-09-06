@@ -1,0 +1,32 @@
+# GitHub Actions CI：自动化测试与代码质量卡点
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  test:
+    name: 测试与代码质量
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 安装依赖
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: 代码规范检查 (ruff)
+        run: ruff check src tests features
+
+      - name: 单元测试 (pytest)
+        run: pytest -v
+
+      - name: BDD 验收测试 (behave)
+        run: behave
