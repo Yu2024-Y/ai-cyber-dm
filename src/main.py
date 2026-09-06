@@ -6,6 +6,8 @@
   src/domain    Pydantic 数据契约
   src/infra     数据持久化与外部 API 适配
 """
+import asyncio
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -15,8 +17,24 @@ from fastapi.staticfiles import StaticFiles
 from src.api.routes import router as api_router
 from src.config import get_settings
 from src.infra.database import init_db
+from src.services import image_worker
 
 settings = get_settings()
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """启动后台生图 worker；关闭时取消任务。"""
+    worker = asyncio.create_task(image_worker.run())
+    try:
+        yield
+    finally:
+        worker.cancel()
+        try:
+            await worker
+        except asyncio.CancelledError:
+            pass
+
 
 # 首次启动自动建表
 init_db()
@@ -25,6 +43,7 @@ app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
     description="AI 赛博 DM 与无限跑团引擎：LLM 主持 + 骰子检定 + 场景图 + 语音播报",
+    lifespan=lifespan,
 )
 
 app.include_router(api_router)
