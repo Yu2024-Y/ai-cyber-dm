@@ -419,7 +419,7 @@ function renderScene(snap) {
     const why = snap.error ? snap.error.slice(0, 40) : '重试耗尽';
     body.innerHTML = '<span>😵 场景生成失败 · 已降级占位图（' + why + '）</span>';
   } else {
-    body.innerHTML = '<div class="spinner"></div><span>场景绘制中…（限流 2 张/分）</span>';
+    body.innerHTML = '<div class="skeleton"></div>';
   }
 }
 

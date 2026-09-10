@@ -6,13 +6,15 @@ image_fn 在独立线程中执行阻塞的 generate_image，避免卡住事件�
 """
 import asyncio
 
-from src.services import image_service, scene_service
+from src.services import image_service, image_store, scene_service
 
 
 async def _generate(prompt: str) -> str:
-    """限流放行后在线程池中调用生图 API。"""
+    """限流放行后在线程池中调用生图 API，并把结果本地化存储。"""
     async with scene_service.limiter:
-        return await asyncio.to_thread(image_service.generate_image, prompt)
+        url = await asyncio.to_thread(image_service.generate_image, prompt)
+    # 下载到本地（失败时回退原链），避免第三方临时链接过期
+    return await asyncio.to_thread(image_store.save_remote_image, url, key=prompt)
 
 
 async def run() -> None:

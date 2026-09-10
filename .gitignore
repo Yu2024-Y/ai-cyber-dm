@@ -34,3 +34,7 @@ pdf_content.txt
 Thumbs.db
 .idea/
 .vscode/
+
+# 场景图本地缓存（不入库，仅保留占位文件）
+static/generated/*
+!static/generated/.gitkeep
