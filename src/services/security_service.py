@@ -5,12 +5,22 @@
 - sanitize：校验 + 防护，返回清理后的安全输入
 """
 INJECTION_PATTERNS = [
-    "忽略",
-    "忽略之前的设定",
+    # 越权指令（真注入）：故意避开"扮演/忽略"等正常跑团常用词，防止误伤
+    "忽略之前的",
+    "忽略以上",
     "无视系统",
-    "你现在是",
-    "扮演",
+    "无视之前",
+    "系统提示词",
     "系统提示",
+    "你现在是",
+    "越狱",
+    "泄露提示",
+    "输出你的提示",
+    "ignore previous",
+    "ignore above",
+    "jailbreak",
+    "developer mode",
+    "repeat the system prompt",
 ]
 
 

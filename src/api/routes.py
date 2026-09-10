@@ -22,7 +22,14 @@ from sqlalchemy.orm import Session as DbSession
 
 from src.infra import player_repository, session_repository
 from src.infra.database import get_db
-from src.services import dice_service, dm_engine, scene_service, story_tree, tts_service
+from src.services import (
+    dice_service,
+    dm_engine,
+    scene_service,
+    security_service,
+    story_tree,
+    tts_service,
+)
 from src.services.role_catalog import ROLES, get_role
 
 router = APIRouter(prefix="/api")
@@ -237,16 +244,22 @@ def chat(gid: int, req: ChatRequest, db: DbDep):
             return JSONResponse(status_code=400, content={"detail": "请先掷骰（🎲），我再帮你结算"})
         user_input = _strip_action_prefix(dice.content)
     else:
+        # 输入防护：长度/空值校验 + Prompt 注入检测（不通过则 400）
+        try:
+            safe_content = security_service.sanitize(req.content)
+        except security_service.SecurityError as e:
+            return JSONResponse(status_code=400, content={"detail": str(e)})
+
         # 保存玩家本次行动（含玩家名与 nonce，供追溯/去重）
         session_repository.save_message(
             db,
             gid,
             "user",
-            f"[{req.player_name}的行动] {req.content}",
+            f"[{req.player_name}的行动] {safe_content}",
             player=req.player_name,
             nonce=req.nonce,
         )
-        user_input = req.content
+        user_input = safe_content
 
     try:
         stream = dm_engine.generate_stream(
