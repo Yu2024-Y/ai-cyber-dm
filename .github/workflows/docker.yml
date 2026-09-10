@@ -1,0 +1,83 @@
+# Docker 镜像构建与推送（独立于 ci.yml，权限与触发面互不干扰）
+# - pull_request：仅构建 + 容器冒烟测试（/health），不推送
+# - push main / tag v*：构建并推送到 GHCR，PR 上显示为独立状态检查
+name: Docker
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+  workflow_dispatch:
+
+# 顶层最小权限，推送权限只在 job 级放大
+permissions:
+  contents: read
+
+jobs:
+  docker:
+    name: 镜像构建与推送
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 计算小写镜像名
+        # GHCR 要求全小写，owner 为 Yu2024-Y（含大写），必须转换
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+
+      - name: 登录 GHCR
+        # fork 发起的 PR 上 GITHUB_TOKEN 只读，跳过登录（该场景本就只构建不推送）
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 生成镜像标签
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=sha,format=short
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: 构建镜像
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          # PR 只校验可构建性；main / tag 推送时才推镜像
+          push: ${{ github.event_name != 'pull_request' }}
+          # 载入本地供下方冒烟测试使用
+          load: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: 容器冒烟测试（/health）
+        # 不注入 API Key：验证的是镜像可启动，而非 AI 能力可用
+        run: |
+          IMAGE_REF="$(echo '${{ steps.meta.outputs.tags }}' | head -n 1)"
+          docker run -d --name smoke -p 8000:8000 "$IMAGE_REF"
+          for i in $(seq 1 20); do
+            if curl -fsS http://127.0.0.1:8000/health | grep -q '"status":"ok"'; then
+              echo "健康检查通过：$IMAGE_REF"
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "容器未能通过健康检查，输出日志："
+          docker logs smoke
+          exit 1

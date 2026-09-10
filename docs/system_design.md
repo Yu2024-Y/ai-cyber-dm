@@ -32,7 +32,7 @@
 | 语音 | `edge-tts`（微软免费，本地） | 剧情语音播报 |
 | 客户端 | openai SDK（OpenAI 兼容格式） | SiliconFlow API 调用 |
 | 测试 | Pytest + Behave(Gherkin) | 单元测试 + BDD 验收 |
-| 容器化 | Dockerfile + docker-compose | 部署封装 |
+| 容器化 | Dockerfile + docker-compose（`python:3.11-slim`） | 部署封装 |
 
 ---
 
@@ -356,4 +356,37 @@ stateDiagram-v2
 - 剧情分支树可视化（前端 Mermaid/树形图）
 - 场景/角色卡动态渲染与浏览
 - 评测数据集 `eval/evalset.json` 与轨迹评分脚本
-- Docker 容器化一键启动
+- ~~Docker 容器化一键启动~~ ✅ 已完成（见第 8 节）
+
+---
+
+## 8. 部署（Docker 容器化，S4-8）
+
+### 8.1 制品
+
+| 文件 | 作用 |
+|------|------|
+| `Dockerfile` | 运行镜像：`python:3.11-slim` + `requirements.txt` + `src/` + `static/` |
+| `.dockerignore` | 构建上下文排除（`.venv`、`.env`、`*.db`、测试/文档等） |
+| `docker-compose.yml` | 一键启动编排（端口、环境变量、持久化卷） |
+| `.github/workflows/docker.yml` | CI 构建镜像并推送 GHCR（PR 仅构建 + 冒烟测试） |
+
+### 8.2 启动方式
+
+```bash
+cp .env.example .env          # 填入 SILICONFLOW_API_KEY（可跳过）
+docker compose up -d --build
+# → http://localhost:8000
+```
+
+### 8.3 关键设计约束
+
+1. **基础镜像固定 Python 3.11**：`src/infra/models.py` 使用 `datetime.UTC`（3.11 新增）；依赖均有 cp311 manylinux wheel，`slim` 无需编译工具链。不用 Alpine（musl wheel 覆盖不全，会回落源码编译）。
+2. **`static/` 必须与 `src/` 同级 COPY**：`src/main.py` 以 `Path(__file__).parent.parent / "static"` 挂载 `/static`，`StaticFiles(check_dir=True)` 在目录缺失时于 **import 阶段** 直接抛错，容器会启动即崩。
+3. **WORKDIR 固定为 `/app`**：`DATABASE_URL` 默认值 `sqlite:///./campaign.db`、`.env` 与 `assets/story.mp3` 均按 CWD 解析。
+4. **单进程运行**：`ImageQueue` / `SceneCards` / `RateLimiter` 均为进程内单例，`--workers > 1` 会导致状态分裂。
+5. **端口由 CMD 显式指定**：`config.app_port` 当前无消费方，`-e APP_PORT=…` 不生效。
+6. **密钥只走运行时注入**：镜像不含 `.env`（`.dockerignore` 排除），构建期不使用 `ARG/ENV` 传密钥，避免固化进镜像层。
+7. **持久化卷**：`dm-data` → `/app/data`（SQLite）、`dm-generated` → `/app/static/generated`（生图本地缓存）；命名卷挂目录而非单文件，避免 SQLite `-journal/-wal` 伴随文件写失败。
+8. **非 root 运行**（`appuser`，uid 10001）；`init_db()` 在导入期建库，故 `/app` 需可写。
+9. **探活**：`HEALTHCHECK` 与 CI 冒烟测试均打 `GET /health`；该端点不校验 API Key 与出网能力，绿灯不代表 AI 功能可用（无 Key 时对话走 `FALLBACK_DM` 兜底剧情）。

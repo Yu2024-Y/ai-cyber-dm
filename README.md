@@ -20,6 +20,7 @@
 | 生图 | Qwen/Qwen-Image（SiliconFlow） |
 | 语音 | edge-tts（微软免费） |
 | 测试 | Pytest + Behave(Gherkin BDD) |
+| 部署 | Docker + docker-compose + GHCR 镜像 |
 
 ## 项目结构
 
@@ -29,10 +30,34 @@
 ├── src/              # 后端源代码
 ├── tests/            # 单元测试 + BDD 验收测试
 ├── eval/             # 评测数据集与评分脚本
+├── static/           # 前端页面 + 生图本地缓存
+├── Dockerfile        # 容器镜像定义
+├── docker-compose.yml # 一键启动编排
 ├── .env.example      # 环境变量模板
 ├── AGENTS.md         # 团队 AI 协作规则
 └── README.md
 ```
+
+## Docker 一键启动
+
+前置：安装 [Docker Desktop](https://www.docker.com/products/docker-desktop/)（Windows 需启用 WSL2）。
+
+```bash
+cp .env.example .env          # 填入 SILICONFLOW_API_KEY（可跳过，见下）
+docker compose up -d --build
+```
+
+打开 <http://localhost:8000> 即可跑团；健康检查：
+
+```bash
+curl http://localhost:8000/health      # → {"status":"ok"}
+```
+
+- **密钥只走运行时注入**：镜像内不含 `.env`（`.dockerignore` 已排除），配置由 `docker compose` 的 `env_file` 或 `docker run --env-file .env` 提供。
+- **无 Key 也能启动**：缺少 `SILICONFLOW_API_KEY` 时 LLM 走本地兜底剧情、生图任务标记失败，`/health` 仍返回 `ok`。
+- **数据持久化**：SQLite 存于命名卷 `dm-data`，生图缓存存于 `dm-generated`；`docker compose down` 不丢数据，`down -v` 才会清空。
+- 不用 compose 时：`docker build -t ai-cyber-dm .` + `docker run -p 8000:8000 --env-file .env ai-cyber-dm`。
+- CI 在合并到 `main` 后自动构建并推送镜像到 GHCR：`ghcr.io/yu2024-y/ai-cyber-dm`。
 
 ## 团队成员
 
