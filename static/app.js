@@ -125,7 +125,13 @@ async function refreshLobby() {
 async function openGame(gid) {
   try {
     const data = await getJson('/api/games/' + gid);
-    G = { id: data.game.id, name: data.game.name };
+    G = {
+      id: data.game.id,
+      name: data.game.name,
+      turn: data.game.turn || 0,
+      maxTurns: data.game.max_turns || 10,
+      status: data.game.status || 'active',
+    };
     const saved = sessionStorage.getItem(identityKey(gid));
     if (saved) {
       try { me = JSON.parse(saved); } catch (e) { me = null; }
@@ -308,9 +314,10 @@ function appendRemote(m) {
 async function pollTick() {
   if (!G) return;
   try {
-    const [md, pd] = await Promise.all([
+    const [md, pd, gd] = await Promise.all([
       getJson('/api/games/' + G.id + '/messages?after_id=' + lastMsgId),
       getJson('/api/games/' + G.id + '/players'),
+      getJson('/api/games/' + G.id),
     ]);
     let newLast = lastMsgId;
     for (const m of md.messages) {
@@ -320,8 +327,66 @@ async function pollTick() {
     }
     lastMsgId = newLast;
     renderRoster(pd.players);
+    applyGameMeta(gd.game);
     refreshStoryTree();
   } catch (e) { /* 轮询失败忽略，下轮重试 */ }
+}
+
+// 战役节奏：第 X/Y 幕 + 完结态（完结后禁止继续行动）
+function applyGameMeta(game) {
+  if (!game) return;
+  G.turn = game.turn || 0;
+  G.maxTurns = game.max_turns || 10;
+  G.status = game.status || 'active';
+  const badge = $('turn-badge');
+  const finished = G.status === 'finished';
+  badge.textContent = finished ? '本局已完结' : `第 ${G.turn}/${G.maxTurns} 幕`;
+  badge.style.borderColor = finished ? 'var(--mag)' : '';
+  const lock = finished;
+  $('input').disabled = lock;
+  $('send').disabled = lock;
+  $('dice-btn').disabled = lock;
+  $('end-btn').disabled = lock;
+  $('input').placeholder = finished ? '本局已完结，请回大厅开新战役' : '描述你的行动，或先掷骰决定成败…';
+}
+
+// 手动结束本局：请 DM 生成终章结局
+async function endGame() {
+  if (!G || !me) return;
+  if (!confirm('确定要结束本局吗？DM 会给出终章结局，之后无法继续本局。')) return;
+  const nonce = makeNonce();
+  myNonces.add(nonce);
+  $('send').disabled = true;
+  $('end-btn').disabled = true;
+  try {
+    const res = await fetch('/api/games/' + G.id + '/finish?nonce=' + encodeURIComponent(nonce), {
+      method: 'POST',
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      toast('结束失败：' + (err.detail || res.status));
+      return;
+    }
+    const dmDiv = document.createElement('div');
+    dmDiv.className = 'msg dm';
+    appendMsgEl(dmDiv);
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let text = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      text += decoder.decode(value, { stream: true });
+      dmDiv.innerHTML = renderRich(text);
+      $('chat').scrollTop = $('chat').scrollHeight;
+    }
+    speakText(text);
+    const gd = await getJson('/api/games/' + G.id);
+    applyGameMeta(gd.game);
+    toast('本局已完结，感谢冒险！');
+  } catch (e) {
+    toast('结束失败：' + e.message);
+  }
 }
 
 function startPoll() {
@@ -492,6 +557,7 @@ function enterGame() {
   lastMsgId = 0;
   showView('game');
   renderRoster([]);
+  applyGameMeta(G);
   loadHistory();
   refreshStoryTree();
   startPoll();
@@ -612,6 +678,10 @@ async function sendMessage() {
   if (text != null) {
     speakText(text);     // 整段语音播报（自动切块）
     triggerScene(false); // 对话后自动绘场景卡
+    try {
+      const gd = await getJson('/api/games/' + G.id);
+      applyGameMeta(gd.game); // 更新"第 X/Y 幕"，到达上限会显示已完结
+    } catch (e) { /* 忽略 */ }
   }
   input.focus();
 }
@@ -657,6 +727,7 @@ $('new-name').addEventListener('keydown', (e) => { if (e.key === 'Enter') create
 $('btn-back').addEventListener('click', () => { showView('lobby'); refreshLobby(); });
 $('btn-home').addEventListener('click', leaveToLobby);
 $('scene-regen').addEventListener('click', () => triggerScene(true));
+$('end-btn').addEventListener('click', endGame);
 $('send').addEventListener('click', sendMessage);
 $('input').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendMessage(); });
 $('dice-btn').addEventListener('click', toggleDiceMenu);

@@ -181,6 +181,62 @@ def test_chat_resolve_without_roll_400(client, monkeypatch) -> None:
     assert resp.status_code == 400
 
 
+def test_auto_finale_and_finished_guard(client, monkeypatch) -> None:
+    """达到幕数上限 → 自动终章并置 finished；之后拒绝继续行动。"""
+    from src.api import routes as routes_mod
+
+    monkeypatch.setattr(routes_mod.settings, "campaign_max_turns", 1)
+    gid = _new_game(client)
+    client.post(f"/api/games/{gid}/join", json={"role_key": "ghost"})
+    monkeypatch.setattr(
+        dm_engine.llm_service,
+        "chat_stream",
+        lambda messages, max_tokens=900: iter(["终章：", "故事就此落幕。"]),
+    )
+    resp = client.post(
+        f"/api/games/{gid}/chat",
+        json={"content": "我转身离开", "player_name": "幽灵", "nonce": "f-1"},
+    )
+    assert resp.status_code == 200
+    game = client.get(f"/api/games/{gid}").json()["game"]
+    assert game["status"] == "finished"
+    assert game["turn"] == 1 and game["max_turns"] == 1
+    # 完结后再说话 / 掷骰 → 409
+    again = client.post(
+        f"/api/games/{gid}/chat",
+        json={"content": "继续", "player_name": "幽灵", "nonce": "f-2"},
+    )
+    assert again.status_code == 409
+    roll = client.post(
+        f"/api/games/{gid}/roll",
+        json={"player_name": "幽灵", "formula": "1d20", "difficulty": 8},
+    )
+    assert roll.status_code == 409
+
+
+def test_manual_finish_gives_epilogue(client, monkeypatch) -> None:
+    """手动结束本局 → 生成终章结局、置 finished、记录系统消息。"""
+    from src.api import routes as routes_mod
+
+    monkeypatch.setattr(routes_mod.settings, "campaign_max_turns", 10)
+    gid = _new_game(client)
+    client.post(f"/api/games/{gid}/join", json={"role_key": "blade"})
+    monkeypatch.setattr(
+        dm_engine.llm_service,
+        "chat_stream",
+        lambda messages, max_tokens=900: iter(["尾声：", "众人各奔东西。"]),
+    )
+    resp = client.post(f"/api/games/{gid}/finish?nonce=f-9")
+    assert resp.status_code == 200
+    assert resp.text == "尾声：众人各奔东西。"
+    game = client.get(f"/api/games/{gid}").json()["game"]
+    assert game["status"] == "finished"
+    msgs = client.get(f"/api/games/{gid}/messages?after_id=0").json()["messages"]
+    assert msgs[-1]["role"] == "assistant"
+    assert any("系统" in m["content"] for m in msgs if m["role"] == "user")
+    assert client.post(f"/api/games/{gid}/finish").status_code == 409
+
+
 def test_chat_blocks_prompt_injection(client) -> None:
     """Prompt 注入被输入防护拦截（400），且不写入历史。"""
     gid = _new_game(client)

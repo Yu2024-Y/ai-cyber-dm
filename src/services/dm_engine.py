@@ -49,6 +49,13 @@ SYSTEM_PROMPT = (
     "氛围给个轻结果。"
 )
 
+# 终章指令：到达幕数上限或玩家手动结束时注入，要求收束本局
+FINALE_INSTRUCTION = (
+    "【终章】本局已到收尾时刻：请用一段完整叙事给出结局——"
+    "交代主线悬念的收束、每位玩家角色的去向与代价，并留一个有余味的尾声；"
+    "不要再抛出新的钩子或新任务，不要再询问玩家下一步。"
+)
+
 MAX_INPUT_LEN = 500
 MAX_HISTORY = 18  # 保留最近的完整消息条数
 _OLD_DIGEST_ASSISTANT_CAP = 5  # 早期摘要最多折叠的 DM 剧情条数
@@ -101,6 +108,7 @@ def build_context(
     *,
     player_name: str = "冒险者",
     roster: list[str] | None = None,
+    finale: bool = False,
 ) -> list[dict]:
     """组装发送给 LLM 的消息列表。
 
@@ -110,12 +118,15 @@ def build_context(
         user_input：玩家本次输入
         player_name：当前行动玩家名（多玩家支持）
         roster：当前战役玩家名单（增强队伍感）
+        finale：是否为终章（收束剧情、给出结局）
     返回：OpenAI 格式消息列表
     """
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     messages.append(
         {"role": "system", "content": _build_status(session, history, roster)}
     )
+    if finale:
+        messages.append({"role": "system", "content": FINALE_INSTRUCTION})
     if len(history) > MAX_HISTORY:
         messages.append(
             {"role": "system", "content": _early_digest(history[:-MAX_HISTORY])}
@@ -141,6 +152,7 @@ def generate_stream(
     *,
     player_name: str = "冒险者",
     roster: list[str] | None = None,
+    finale: bool = False,
     max_tokens: int = 900,
 ):
     """流式生成剧情回复（SSE 用），逐段 yield 文本。
@@ -149,7 +161,12 @@ def generate_stream(
     """
     _validate(user_input)
     messages = build_context(
-        session, history, user_input, player_name=player_name, roster=roster
+        session,
+        history,
+        user_input,
+        player_name=player_name,
+        roster=roster,
+        finale=finale,
     )
     yield from llm_service.chat_stream(messages, max_tokens=max_tokens)
 
@@ -161,11 +178,17 @@ def generate(
     *,
     player_name: str = "冒险者",
     roster: list[str] | None = None,
+    finale: bool = False,
     max_tokens: int = 900,
 ) -> str:
     """非流式生成剧情回复（测试与降级用）。"""
     _validate(user_input)
     messages = build_context(
-        session, history, user_input, player_name=player_name, roster=roster
+        session,
+        history,
+        user_input,
+        player_name=player_name,
+        roster=roster,
+        finale=finale,
     )
     return llm_service.chat(messages, max_tokens=max_tokens)

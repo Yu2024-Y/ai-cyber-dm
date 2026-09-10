@@ -20,6 +20,7 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session as DbSession
 
+from src.config import get_settings
 from src.infra import player_repository, session_repository
 from src.infra.database import get_db
 from src.services import (
@@ -35,6 +36,8 @@ from src.services.role_catalog import ROLES, get_role
 router = APIRouter(prefix="/api")
 
 DbDep = Annotated[DbSession, Depends(get_db)]
+
+settings = get_settings()
 
 
 def _msg_to_dict(m) -> dict:
@@ -71,6 +74,10 @@ def _game_to_dict(db: DbSession, session) -> dict:
         "player_count": len(players),
         "message_count": len(messages),
         "players": [_player_to_dict(p) for p in players],
+        # 战役节奏：第几幕 / 共几幕 / 状态（active|finished）
+        "turn": session.turn or 0,
+        "max_turns": settings.campaign_max_turns,
+        "status": session.status or "active",
     }
 
 
@@ -106,6 +113,34 @@ class ChatRequest(BaseModel):
 def _strip_action_prefix(text: str) -> str:
     """去掉消息存储用的 [名字的行动] 前缀。"""
     return re.sub(r"^\[[^\]]*\]\s*", "", text)
+
+
+def _sse_stream(stream, db: DbSession, gid: int, nonce: str) -> StreamingResponse:
+    """把引擎生成流包成 SSE：结束后保存 assistant 回复；异常时本地兜底。"""
+
+    def gen():
+        collected: list[str] = []
+        try:
+            for chunk in stream:
+                collected.append(chunk)
+                yield chunk
+        except Exception:  # noqa: BLE001  外部模型异常 → 本地兜底，保证不中断
+            suffix = "" if collected else "\n（此刻你耳边只有雨声和远处警笛的回响……）"
+            text = FALLBACK_DM + suffix
+            if text not in collected:
+                collected.append(text)
+                yield text
+        if collected:
+            session_repository.save_message(
+                db, gid, "assistant", "".join(collected), nonce=nonce
+            )
+
+    return StreamingResponse(gen(), media_type="text/event-stream")
+
+
+def _is_finished(session) -> bool:
+    """本局是否已完结（终章后不再接受行动）。"""
+    return (session.status or "active") == "finished"
 
 
 class RollRequest(BaseModel):
@@ -220,6 +255,8 @@ def chat(gid: int, req: ChatRequest, db: DbDep):
     session = _get_game_or_404(db, gid)
     if isinstance(session, JSONResponse):
         return session
+    if _is_finished(session):
+        return JSONResponse(status_code=409, content={"detail": "本局已完结，请开始新战役"})
 
     # 读取该战役完整历史（多人共享同一上下文）
     msgs = session_repository.list_messages(db, gid)
@@ -227,9 +264,10 @@ def chat(gid: int, req: ChatRequest, db: DbDep):
 
     # 战役内玩家名单（DM 状态栏使用，增强队伍感）
     roster = [p.name for p in player_repository.list_players(db, gid)]
+    finale = False
 
     if req.resolve:
-        # 结算模式：不追加新行动，直接结算该玩家最近一次掷骰
+        # 结算模式：不追加新行动、不推进幕数，直接结算该玩家最近一次掷骰
         dice = next(
             (
                 m
@@ -261,6 +299,13 @@ def chat(gid: int, req: ChatRequest, db: DbDep):
         )
         user_input = safe_content
 
+        # 幕数推进：达到上限则本轮进入终章并完结本局
+        session.turn = (session.turn or 0) + 1
+        finale = session.turn >= settings.campaign_max_turns
+        if finale:
+            session.status = "finished"
+        db.commit()
+
     try:
         stream = dm_engine.generate_stream(
             session,
@@ -268,33 +313,39 @@ def chat(gid: int, req: ChatRequest, db: DbDep):
             user_input,
             player_name=req.player_name,
             roster=roster,
+            finale=finale,
         )
-
-        def gen_with_fallback():
-            """流式输出剧情，结束后保存 DM 回复（沿用同一 nonce）。
-
-            模型异常（网络/额度/无 Key）时降级为本地预设剧情，
-            保证演示现场对话永不中断、不红屏。
-            """
-            collected: list[str] = []
-            try:
-                for chunk in stream:
-                    collected.append(chunk)
-                    yield chunk
-            except Exception:  # noqa: BLE001  外部模型异常 → 本地兜底
-                suffix = "" if collected else "\n（此刻你耳边只有雨声和远处警笛的回响……）"
-                text = FALLBACK_DM + suffix
-                if text not in collected:
-                    collected.append(text)
-                    yield text
-            if collected:
-                session_repository.save_message(
-                    db, gid, "assistant", "".join(collected), nonce=req.nonce
-                )
-
-        return StreamingResponse(gen_with_fallback(), media_type="text/event-stream")
+        return _sse_stream(stream, db, gid, req.nonce)
     except dm_engine.InputError as e:
         return JSONResponse(status_code=400, content={"detail": str(e)})
+
+
+@router.post("/games/{gid}/finish")
+def finish_game(gid: int, nonce: str = "", db: DbDep = None):
+    """手动结束本局：让 DM 生成终章结局，并把战役置为 finished。"""
+    session = _get_game_or_404(db, gid)
+    if isinstance(session, JSONResponse):
+        return session
+    if _is_finished(session):
+        return JSONResponse(status_code=409, content={"detail": "本局已完结"})
+
+    history = [
+        {"role": m.role, "content": m.content}
+        for m in session_repository.list_messages(db, gid)
+    ]
+    roster = [p.name for p in player_repository.list_players(db, gid)]
+
+    user_input = "（玩家选择在此收束本次冒险）"
+    session_repository.save_message(
+        db, gid, "user", f"[系统] {user_input}", nonce=nonce
+    )
+    session.status = "finished"
+    db.commit()
+
+    stream = dm_engine.generate_stream(
+        session, history, user_input, player_name="系统", roster=roster, finale=True
+    )
+    return _sse_stream(stream, db, gid, nonce)
 
 
 @router.post("/games/{gid}/roll")
@@ -306,6 +357,8 @@ def roll_dice(gid: int, req: RollRequest, db: DbDep):
     session = _get_game_or_404(db, gid)
     if isinstance(session, JSONResponse):
         return session
+    if _is_finished(session):
+        return JSONResponse(status_code=409, content={"detail": "本局已完结，无法继续掷骰"})
     if not 1 <= req.difficulty <= 30:
         return JSONResponse(status_code=400, content={"detail": "难度需在 1~30 之间"})
     try:
