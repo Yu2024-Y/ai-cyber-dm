@@ -1,0 +1,31 @@
+# AI 赛博 DM —— 一键启动
+#
+#   cp .env.example .env      # 填入 SILICONFLOW_API_KEY（可选）
+#   docker compose up -d --build
+#   打开 http://localhost:8000
+#
+# 说明：缺 .env 也能启动（AI 能力降级为本地兜底剧情，/health 仍为 ok），
+#       故 env_file 标记为可选，需 Docker Compose v2.24+。
+services:
+  dm:
+    build:
+      context: .
+    image: ai-cyber-dm:local
+    container_name: ai-cyber-dm
+    ports:
+      - "8000:8000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # 数据库落在命名卷上，容器重建不丢数据（四个斜杠 = 绝对路径）
+      DATABASE_URL: sqlite:////app/data/campaign.db
+    volumes:
+      - dm-data:/app/data                    # SQLite 数据库
+      - dm-generated:/app/static/generated   # 生图本地缓存
+    restart: unless-stopped
+    # 健康检查沿用 Dockerfile 的 HEALTHCHECK（GET /health）
+
+volumes:
+  dm-data:
+  dm-generated:
