@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     # TTS
     tts_voice: str = "zh-CN-XiaoxiaoNeural"
 
+    # 战役节奏：一局最多多少"幕"（达到后自动进入终章收尾）
+    campaign_max_turns: int = 10
+
     # 存储与服务
     database_url: str = "sqlite:///./campaign.db"
     app_port: int = 8000
